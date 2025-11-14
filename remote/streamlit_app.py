@@ -86,70 +86,43 @@ def get_gemini_client():
         st.error(f"❌ Gemini API 연결 오류: {e}")
         return None
 
-def augment_questions_with_gemini(original_question: str, gemini_client) -> list:
+def translate_to_english(korean_question: str, gemini_client):
     """
-    Gemini API를 사용하여 주어진 질문과 유사한 질문 3개를 생성합니다.
+    Gemini API를 사용하여 한글 질문을 영어로 번역합니다.
 
     Args:
-        original_question: 원본 질문
+        korean_question: 한글 질문
         gemini_client: Gemini API 클라이언트
 
     Returns:
-        [원본 질문, 유사질문1, 유사질문2, 유사질문3] 형태의 리스트
+        영어로 번역된 질문 문자열, 실패 시 None
     """
     if not gemini_client:
-        # Gemini 클라이언트가 없으면 원본 질문만 반환
-        return [original_question]
+        return None
 
     try:
-        prompt = f"""주어진 질문과 의미는 같지만 표현이 다른 질문 3개를 생성해주세요.
-원본 질문의 핵심 의도와 맥락을 유지하면서, 다양한 표현 방식을 사용해주세요.
+        prompt = f"""다음 한글 질문을 영어로 번역해주세요. 번역된 영어 문장만 출력하고, 다른 설명은 추가하지 마세요.
 
-원본 질문: {original_question}
+한글 질문: {korean_question}
 
-다음 형식으로 정확히 3개의 질문만 생성해주세요 (번호 없이, 각 질문은 한 줄로):
-1. 첫 번째 유사 질문
-2. 두 번째 유사 질문
-3. 세 번째 유사 질문
-
-응답 예시:
-사용자 계정을 어떻게 만들 수 있나요
-회원가입은 어디서 하나요
-새로운 계정 생성 방법을 알려주세요"""
+영어 번역:"""
 
         response = gemini_client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt
         )
-        generated_text = response.text.strip()
 
-        # 생성된 텍스트를 줄 단위로 분리
-        lines = [line.strip() for line in generated_text.split('\n') if line.strip()]
+        english_question = response.text.strip()
 
-        # 번호나 불필요한 prefix 제거
-        similar_questions = []
-        for line in lines:
-            # "1.", "2.", "3." 등의 번호 제거
-            cleaned = line
-            if len(line) > 0 and line[0].isdigit():
-                # 숫자로 시작하면 숫자와 점, 공백 제거
-                parts = line.split('.', 1)
-                if len(parts) > 1:
-                    cleaned = parts[1].strip()
-
-            if cleaned and len(similar_questions) < 3:
-                similar_questions.append(cleaned.lower().strip())
-
-        # 생성된 질문이 3개 미만이면 원본 질문으로 채우기
-        while len(similar_questions) < 3:
-            similar_questions.append(original_question)
-
-        # 원본 질문 + 생성된 질문 3개 반환
-        return [original_question] + similar_questions[:3]
+        # 기본적인 검증: 비어있지 않고, 너무 길지 않은지 확인
+        if english_question and len(english_question) < 500:
+            return english_question.lower().strip()
+        else:
+            return None
 
     except Exception as e:
-        st.warning(f"⚠️ 질문 증강 중 오류 발생: {e}. 원본 질문만 사용합니다.")
-        return [original_question]
+        print(f"번역 오류: {e}")
+        return None
 
 qdrant_client = get_qdrant_client()
 embedding_model = get_embedding_model()
@@ -173,11 +146,14 @@ def initialize_db():
 
     st.info(f"📚 원본 데이터: {len(questions)}개의 Q&A 쌍 로드 완료")
 
-    # 질문 증강 수행 (Gemini API 사용)
+    # 질문 번역 수행 (Gemini API 사용)
     if gemini_client:
-        st.info("🤖 Gemini를 사용하여 질문을 증강하는 중...")
+        st.info("🌐 Gemini를 사용하여 질문을 영어로 번역하는 중...")
         augmented_questions = []
         augmented_answers = []
+
+        translation_success = 0
+        translation_fail = 0
 
         # 진행 상황 표시
         progress_bar = st.progress(0)
@@ -187,25 +163,32 @@ def initialize_db():
             # 진행 상황 업데이트
             progress = (idx + 1) / len(questions)
             progress_bar.progress(progress)
-            status_text.text(f"처리 중: {idx + 1}/{len(questions)} ({progress*100:.1f}%)")
+            status_text.text(f"번역 중: {idx + 1}/{len(questions)} ({progress*100:.1f}%)")
 
-            # 질문 증강: 원본 질문 + 유사 질문 3개 = 총 4개
-            similar_questions = augment_questions_with_gemini(question, gemini_client)
+            # 한글 질문 추가
+            augmented_questions.append(question)
+            augmented_answers.append(answer)
 
-            # 각 질문을 같은 답변과 매핑
-            for aug_question in similar_questions:
-                augmented_questions.append(aug_question)
+            # 영어로 번역
+            english_question = translate_to_english(question, gemini_client)
+
+            if english_question:
+                # 번역 성공: 영어 질문도 추가
+                augmented_questions.append(english_question)
                 augmented_answers.append(answer)
-                st.info(f"증강된 질문: {aug_question}  =>  답변: {answer}")
+                translation_success += 1
+            else:
+                # 번역 실패: 한글 질문만 유지
+                translation_fail += 1
 
         progress_bar.empty()
         status_text.empty()
 
         questions = augmented_questions
         answers = augmented_answers
-        st.success(f"✅ 질문 증강 완료: {len(questions)}개의 질문으로 확장되었습니다.", icon="🚀")
+        st.success(f"✅ 질문 번역 완료: {len(questions)}개의 질문 (번역 성공: {translation_success}, 실패: {translation_fail})", icon="🚀")
     else:
-        st.warning("⚠️ Gemini API를 사용할 수 없어 질문 증강을 건너뜁니다.")
+        st.warning("⚠️ Gemini API를 사용할 수 없어 질문 번역을 건너뜁니다.")
 
     # 컬렉션 생성
     vector_dim = embedding_model.get_sentence_embedding_dimension()
@@ -248,37 +231,78 @@ initialize_db()  # 앱 시작 시 DB 초기화 시도
 
 def search_qdrant_db(user_query: str):
     """
-    사용자의 질문을 벡터화하여 Qdrant에서 검색하는 함수입니다.
-    FastAPI의 POST /chat 엔드포인트 로직과 동일합니다.
+    사용자의 질문을 한글과 영어로 모두 검색하여 최적의 답변을 찾습니다.
+    1. 한글 질문으로 Top-3 검색
+    2. 영어로 번역 후 Top-3 검색
+    3. 두 결과에서 일치하는 답변 찾기 (있으면 가장 높은 유사도 선택)
+    4. 일치하는 답변 없으면 한글 검색 결과 1위 반환
     """
     if not qdrant_client or not embedding_model:
         st.error("서버 자원(Qdrant/모델)이 로드되지 않아 검색할 수 없습니다.")
         return "죄송합니다. 서버 초기화에 실패했습니다."
-    
-    user_query = user_query.lower().strip() # lower() 전처리 과정 추가 # trim() 전처리 과정 추가
 
-    # 1. 질문을 벡터화 (임베딩)
+    user_query = user_query.lower().strip()
+
     with st.spinner("질문을 분석하고 지식 기반을 검색 중..."):
-        query_vector = embedding_model.encode(user_query).tolist()
-        
-        # 2. Qdrant에서 유사도 검색
-        search_results = qdrant_client.search(
+        # 1. 한글 질문으로 Top-3 검색
+        korean_query_vector = embedding_model.encode(user_query).tolist()
+        korean_results = qdrant_client.search(
             collection_name=COLLECTION_NAME,
-            query_vector=query_vector,
-            limit=1,
+            query_vector=korean_query_vector,
+            limit=3,
             with_payload=True
         )
-    
-    # 3. 검색 결과 처리 및 환각 방지 로직 (Threshold)
-    if search_results and search_results[0].score >= SIMILARITY_THRESHOLD:
-        final_answer = search_results[0].payload.get('answer', "답변 내용이 손실되었습니다.")
-        st.info(f"유사도 점수: {search_results[0].score:.4f}")
-    else:
-        final_answer = "죄송합니다. 현재 지식 기반(DB)에서 요청하신 정보를 찾을 수 없습니다. (유사도 낮음)"
-        if search_results:
-             st.warning(f"유사도 점수가 임계값({SIMILARITY_THRESHOLD})보다 낮습니다: {search_results[0].score:.4f}")
-            
-    return final_answer
+
+        # 2. 영어로 번역 후 Top-3 검색
+        english_results = []
+        if gemini_client:
+            english_query = translate_to_english(user_query, gemini_client)
+            if english_query:
+                english_query_vector = embedding_model.encode(english_query).tolist()
+                english_results = qdrant_client.search(
+                    collection_name=COLLECTION_NAME,
+                    query_vector=english_query_vector,
+                    limit=3,
+                    with_payload=True
+                )
+
+        # 3. 한글과 영어 검색 결과에서 일치하는 답변 찾기
+        matching_results = []
+
+        if korean_results and english_results:
+            # 한글 결과의 답변들
+            korean_answers = {result.payload.get('answer'): result for result in korean_results}
+            # 영어 결과에서 한글 결과와 일치하는 답변 찾기
+            for eng_result in english_results:
+                eng_answer = eng_result.payload.get('answer')
+                if eng_answer in korean_answers:
+                    # 일치하는 답변 발견: 둘 중 더 높은 유사도 사용
+                    kor_result = korean_answers[eng_answer]
+                    better_result = eng_result if eng_result.score > kor_result.score else kor_result
+                    matching_results.append(better_result)
+
+        # 4. 결과 선택 로직
+        if matching_results:
+            # 일치하는 답변이 있으면 그 중 가장 높은 유사도 선택
+            best_match = max(matching_results, key=lambda x: x.score)
+            if best_match.score >= SIMILARITY_THRESHOLD:
+                final_answer = best_match.payload.get('answer', "답변 내용이 손실되었습니다.")
+                st.info(f"✅ 한글/영어 검색 일치 결과 (유사도: {best_match.score:.4f})")
+                return final_answer
+            else:
+                st.warning(f"일치하는 결과가 있으나 유사도가 낮습니다: {best_match.score:.4f}")
+
+        # 5. 일치하는 답변이 없거나 유사도가 낮으면 한글 검색 결과 1위 사용
+        if korean_results and korean_results[0].score >= SIMILARITY_THRESHOLD:
+            final_answer = korean_results[0].payload.get('answer', "답변 내용이 손실되었습니다.")
+            st.info(f"📝 한글 검색 결과 (유사도: {korean_results[0].score:.4f})")
+            return final_answer
+        else:
+            # 유사도가 임계값 미만
+            final_answer = "죄송합니다. 현재 지식 기반(DB)에서 요청하신 정보를 찾을 수 없습니다. (유사도 낮음)"
+            if korean_results:
+                st.warning(f"유사도 점수가 임계값({SIMILARITY_THRESHOLD})보다 낮습니다: {korean_results[0].score:.4f}")
+            return final_answer
 
 
 # --- 4. Streamlit UI 구성 ---    
