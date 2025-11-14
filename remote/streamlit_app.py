@@ -22,8 +22,8 @@ print("------------------")
 
 # --- 2. 리소스 캐싱 (서버 시작 시 한 번만 로드) ---
 
-def parse_qa_data(data):
-    df = pd.read_excel(data, header=None, skiprows=3) # 처음 3줄은 skip
+def parse_qa_data(file_path):
+    df = pd.read_excel(file_path, header=None, skiprows=3, engine="openpyxl") # 처음 3줄은 skip
     qa_column_index = 2 
     questions = []
     answers = []
