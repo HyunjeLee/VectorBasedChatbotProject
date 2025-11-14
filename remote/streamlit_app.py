@@ -54,7 +54,7 @@ def get_qdrant_client():
     """Qdrant 클라이언트를 로드하고 메모리에 캐싱합니다."""
     try:
         client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=300)
-        st.success(" ✅ Qdrant 클라이언트 연결 성공.", icon="🔗")
+        st.toast(" ✅ Qdrant 클라이언트 연결 성공.", icon="🔗")
         return client
     except Exception as e:
         st.error(f"❌ Qdrant 연결 오류: {e}")
@@ -65,7 +65,7 @@ def get_embedding_model():
     """임베딩 모델을 로드하고 메모리에 캐싱합니다."""
     try:
         model = SentenceTransformer(EMBEDDING_MODEL)
-        st.success(" ✅ 임베딩 모델 로드 성공.", icon="🧠")
+        st.toast(" ✅ 임베딩 모델 로드 성공.", icon="🧠")
         return model
     except Exception as e:
         st.error(f"❌ 임베딩 모델 로드 오류: {e}")
@@ -80,7 +80,7 @@ def get_gemini_client():
             st.warning("⚠️ GEMINI_API_KEY가 설정되지 않았습니다. 질문 증강 기능을 사용할 수 없습니다.")
             return None
         client = genai.Client(api_key=api_key)
-        st.success(" ✅ Gemini API 클라이언트 연결 성공.", icon="🤖")
+        st.toast(" ✅ Gemini API 클라이언트 연결 성공.", icon="🤖")
         return client
     except Exception as e:
         st.error(f"❌ Gemini API 연결 오류: {e}")
@@ -132,110 +132,117 @@ gemini_client = get_gemini_client()
 def initialize_db():
     """Qdrant에 데이터가 없으면 초기화합니다."""
 
-    st.info("🔄 DB 초기화 로직을 시작합니다...")
+    # 초기화 메시지를 담을 플레이스홀더 생성
+    init_placeholder = st.empty()
 
-    if not qdrant_client or not embedding_model:
-        st.error("서버 자원(Qdrant/모델)이 로드되지 않아 DB를 초기화할 수 없습니다.")
-        return
+    with init_placeholder.container():
+        st.info("🔄 DB 초기화 로직을 시작합니다...")
 
-    # 데이터 로드 및 전처리
-    questions, answers = parse_qa_data(DATA_FILE_PATH)
-    if not questions or not answers or len(questions) != len(answers):
-        st.error("데이터 파일에서 유효한 Q&A 쌍을 찾을 수 없습니다.")
-        return
+        if not qdrant_client or not embedding_model:
+            st.error("서버 자원(Qdrant/모델)이 로드되지 않아 DB를 초기화할 수 없습니다.")
+            return
 
-    st.info(f"📚 원본 데이터: {len(questions)}개의 Q&A 쌍 로드 완료")
+        # 데이터 로드 및 전처리
+        questions, answers = parse_qa_data(DATA_FILE_PATH)
+        if not questions or not answers or len(questions) != len(answers):
+            st.error("데이터 파일에서 유효한 Q&A 쌍을 찾을 수 없습니다.")
+            return
 
-    # 질문 + 답변 번역 수행 (Gemini API 사용)
-    if gemini_client:
-        st.info("🌐 Gemini를 사용하여 질문과 답변을 영어로 번역하는 중...")
-        augmented_questions = []
-        augmented_answers = []
+        st.info(f"📚 원본 데이터: {len(questions)}개의 Q&A 쌍 로드 완료")
 
-        question_translation_success = 0
-        question_translation_fail = 0
-        answer_translation_success = 0
-        answer_translation_fail = 0
+        # 질문 + 답변 번역 수행 (Gemini API 사용)
+        if gemini_client:
+            st.info("🌐 Gemini를 사용하여 질문과 답변을 영어로 번역하는 중...")
+            augmented_questions = []
+            augmented_answers = []
 
-        # 진행 상황 표시
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+            question_translation_success = 0
+            question_translation_fail = 0
+            answer_translation_success = 0
+            answer_translation_fail = 0
 
-        for idx, (question, answer) in enumerate(zip(questions, answers)):
-            # 진행 상황 업데이트
-            progress = (idx + 1) / len(questions)
-            progress_bar.progress(progress)
-            status_text.text(f"번역 중: {idx + 1}/{len(questions)} ({progress*100:.1f}%)")
+            # 진행 상황 표시
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
-            # 1. 한글 질문 추가
-            augmented_questions.append(question)
-            augmented_answers.append(answer)
+            for idx, (question, answer) in enumerate(zip(questions, answers)):
+                # 진행 상황 업데이트
+                progress = (idx + 1) / len(questions)
+                progress_bar.progress(progress)
+                status_text.text(f"번역 중: {idx + 1}/{len(questions)} ({progress*100:.1f}%)")
 
-            # 2. 영어 질문 번역 및 추가
-            english_question = translate_to_english(question, gemini_client)
-            if english_question:
-                augmented_questions.append(english_question)
+                # 1. 한글 질문 추가
+                augmented_questions.append(question)
                 augmented_answers.append(answer)
-                question_translation_success += 1
-            else:
-                question_translation_fail += 1
 
-            # 3. 한글 답변 추가 (벡터화를 위해)
-            augmented_questions.append(answer)
-            augmented_answers.append(answer)
+                # 2. 영어 질문 번역 및 추가
+                english_question = translate_to_english(question, gemini_client)
+                if english_question:
+                    augmented_questions.append(english_question)
+                    augmented_answers.append(answer)
+                    question_translation_success += 1
+                else:
+                    question_translation_fail += 1
 
-            # 4. 영어 답변 번역 및 추가
-            english_answer = translate_to_english(answer, gemini_client)
-            if english_answer:
-                augmented_questions.append(english_answer)
+                # 3. 한글 답변 추가 (벡터화를 위해)
+                augmented_questions.append(answer)
                 augmented_answers.append(answer)
-                answer_translation_success += 1
-            else:
-                answer_translation_fail += 1
 
-        progress_bar.empty()
-        status_text.empty()
+                # 4. 영어 답변 번역 및 추가
+                english_answer = translate_to_english(answer, gemini_client)
+                if english_answer:
+                    augmented_questions.append(english_answer)
+                    augmented_answers.append(answer)
+                    answer_translation_success += 1
+                else:
+                    answer_translation_fail += 1
 
-        questions = augmented_questions
-        answers = augmented_answers
-        st.success(f"✅ 번역 완료: 총 {len(questions)}개의 벡터 포인트 생성", icon="🚀")
-        st.info(f"📊 질문 번역 - 성공: {question_translation_success}, 실패: {question_translation_fail}")
-        st.info(f"📊 답변 번역 - 성공: {answer_translation_success}, 실패: {answer_translation_fail}")
-    else:
-        st.warning("⚠️ Gemini API를 사용할 수 없어 질문/답변 번역을 건너뜁니다.")
+            progress_bar.empty()
+            status_text.empty()
 
-    # 컬렉션 생성
-    vector_dim = embedding_model.get_sentence_embedding_dimension()
-    if qdrant_client.collection_exists(collection_name=COLLECTION_NAME):
-        qdrant_client.delete_collection(collection_name=COLLECTION_NAME)
-    print(f"기존 컬렉션 '{COLLECTION_NAME}'을(를) 삭제했습니다.")
+            questions = augmented_questions
+            answers = augmented_answers
+            st.success(f"✅ 번역 완료: 총 {len(questions)}개의 벡터 포인트 생성", icon="🚀")
+            st.info(f"📊 질문 번역 - 성공: {question_translation_success}, 실패: {question_translation_fail}")
+            st.info(f"📊 답변 번역 - 성공: {answer_translation_success}, 실패: {answer_translation_fail}")
+        else:
+            st.warning("⚠️ Gemini API를 사용할 수 없어 질문/답변 번역을 건너뜁니다.")
 
-    qdrant_client.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=models.VectorParams(
-            size=vector_dim,
-            distance=models.Distance.COSINE
-        ),
-    )
-    print(f"컬렉션 '{COLLECTION_NAME}' 생성 완료.")
-    st.info(f"컬렉션 '{COLLECTION_NAME}'이(가) 생성되었습니다.")
+        # 컬렉션 생성
+        vector_dim = embedding_model.get_sentence_embedding_dimension()
+        if qdrant_client.collection_exists(collection_name=COLLECTION_NAME):
+            qdrant_client.delete_collection(collection_name=COLLECTION_NAME)
+        print(f"기존 컬렉션 '{COLLECTION_NAME}'을(를) 삭제했습니다.")
 
-    # 데이터 임베딩 및 업로드
-    st.info("🧠 질문을 임베딩하는 중...")
-    embeddings = embedding_model.encode(questions).tolist()
-    points = [
-        models.PointStruct(
-            id=i,
-            vector=embeddings[i],
-            payload={"question": questions[i], "answer": answers[i]}
+        qdrant_client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=models.VectorParams(
+                size=vector_dim,
+                distance=models.Distance.COSINE
+            ),
         )
-        for i in range(len(questions))
-    ]
-    qdrant_client.upsert(
-        collection_name=COLLECTION_NAME,
-        points=points
-    )
-    st.success(f"✅ {len(points)}개의 Q&A 데이터가 업로드되었습니다.", icon="📥")
+        print(f"컬렉션 '{COLLECTION_NAME}' 생성 완료.")
+        st.info(f"컬렉션 '{COLLECTION_NAME}'이(가) 생성되었습니다.")
+
+        # 데이터 임베딩 및 업로드
+        st.info("🧠 질문을 임베딩하는 중...")
+        embeddings = embedding_model.encode(questions).tolist()
+        points = [
+            models.PointStruct(
+                id=i,
+                vector=embeddings[i],
+                payload={"question": questions[i], "answer": answers[i]}
+            )
+            for i in range(len(questions))
+        ]
+        qdrant_client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=points
+        )
+        st.success(f"✅ {len(points)}개의 Q&A 데이터가 업로드되었습니다.", icon="📥")
+
+    # 초기화 완료 후 모든 메시지 제거
+    init_placeholder.empty()
 
     return True
 
