@@ -54,7 +54,7 @@ def get_qdrant_client():
     """Qdrant 클라이언트를 로드하고 메모리에 캐싱합니다."""
     try:
         client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=300)
-        st.toast(" ✅ Qdrant 클라이언트 연결 성공.", icon="🔗")
+        print(" ✅ Qdrant 클라이언트 연결 성공.")
         return client
     except Exception as e:
         st.error(f"❌ Qdrant 연결 오류: {e}")
@@ -65,7 +65,7 @@ def get_embedding_model():
     """임베딩 모델을 로드하고 메모리에 캐싱합니다."""
     try:
         model = SentenceTransformer(EMBEDDING_MODEL)
-        st.toast(" ✅ 임베딩 모델 로드 성공.", icon="🧠")
+        print(" ✅ 임베딩 모델 로드 성공.")
         return model
     except Exception as e:
         st.error(f"❌ 임베딩 모델 로드 오류: {e}")
@@ -80,7 +80,7 @@ def get_gemini_client():
             st.warning("⚠️ GEMINI_API_KEY가 설정되지 않았습니다. 질문 증강 기능을 사용할 수 없습니다.")
             return None
         client = genai.Client(api_key=api_key)
-        st.toast(" ✅ Gemini API 클라이언트 연결 성공.", icon="🤖")
+        print(" ✅ Gemini API 클라이언트 연결 성공.")
         return client
     except Exception as e:
         st.error(f"❌ Gemini API 연결 오류: {e}")
