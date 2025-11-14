@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
+from google import genai
 
 # --- 1. 설정값 ---
 QDRANT_URL = st.secrets["QDRANT_URL"]
@@ -69,11 +70,92 @@ def get_embedding_model():
     except Exception as e:
         st.error(f"❌ 임베딩 모델 로드 오류: {e}")
         return None
-    
+
+@st.cache_resource
+def get_gemini_client():
+    """Gemini API 클라이언트를 로드하고 메모리에 캐싱합니다."""
+    try:
+        api_key = st.secrets.get("GEMINI_API_KEY")
+        if not api_key:
+            st.warning("⚠️ GEMINI_API_KEY가 설정되지 않았습니다. 질문 증강 기능을 사용할 수 없습니다.")
+            return None
+        client = genai.Client(api_key=api_key)
+        st.success(" ✅ Gemini API 클라이언트 연결 성공.", icon="🤖")
+        return client
+    except Exception as e:
+        st.error(f"❌ Gemini API 연결 오류: {e}")
+        return None
+
+def augment_questions_with_gemini(original_question: str, gemini_client) -> list:
+    """
+    Gemini API를 사용하여 주어진 질문과 유사한 질문 3개를 생성합니다.
+
+    Args:
+        original_question: 원본 질문
+        gemini_client: Gemini API 클라이언트
+
+    Returns:
+        [원본 질문, 유사질문1, 유사질문2, 유사질문3] 형태의 리스트
+    """
+    if not gemini_client:
+        # Gemini 클라이언트가 없으면 원본 질문만 반환
+        return [original_question]
+
+    try:
+        prompt = f"""주어진 질문과 의미는 같지만 표현이 다른 질문 3개를 생성해주세요.
+원본 질문의 핵심 의도와 맥락을 유지하면서, 다양한 표현 방식을 사용해주세요.
+
+원본 질문: {original_question}
+
+다음 형식으로 정확히 3개의 질문만 생성해주세요 (번호 없이, 각 질문은 한 줄로):
+1. 첫 번째 유사 질문
+2. 두 번째 유사 질문
+3. 세 번째 유사 질문
+
+응답 예시:
+사용자 계정을 어떻게 만들 수 있나요
+회원가입은 어디서 하나요
+새로운 계정 생성 방법을 알려주세요"""
+
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        generated_text = response.text.strip()
+
+        # 생성된 텍스트를 줄 단위로 분리
+        lines = [line.strip() for line in generated_text.split('\n') if line.strip()]
+
+        # 번호나 불필요한 prefix 제거
+        similar_questions = []
+        for line in lines:
+            # "1.", "2.", "3." 등의 번호 제거
+            cleaned = line
+            if len(line) > 0 and line[0].isdigit():
+                # 숫자로 시작하면 숫자와 점, 공백 제거
+                parts = line.split('.', 1)
+                if len(parts) > 1:
+                    cleaned = parts[1].strip()
+
+            if cleaned and len(similar_questions) < 3:
+                similar_questions.append(cleaned.lower().strip())
+
+        # 생성된 질문이 3개 미만이면 원본 질문으로 채우기
+        while len(similar_questions) < 3:
+            similar_questions.append(original_question)
+
+        # 원본 질문 + 생성된 질문 3개 반환
+        return [original_question] + similar_questions[:3]
+
+    except Exception as e:
+        st.warning(f"⚠️ 질문 증강 중 오류 발생: {e}. 원본 질문만 사용합니다.")
+        return [original_question]
+
 qdrant_client = get_qdrant_client()
 embedding_model = get_embedding_model()
+gemini_client = get_gemini_client()
 
-@st.cache_resource    
+@st.cache_resource
 def initialize_db():
     """Qdrant에 데이터가 없으면 초기화합니다."""
 
@@ -82,13 +164,49 @@ def initialize_db():
     if not qdrant_client or not embedding_model:
         st.error("서버 자원(Qdrant/모델)이 로드되지 않아 DB를 초기화할 수 없습니다.")
         return
-    
+
     # 데이터 로드 및 전처리
     questions, answers = parse_qa_data(DATA_FILE_PATH)
     if not questions or not answers or len(questions) != len(answers):
         st.error("데이터 파일에서 유효한 Q&A 쌍을 찾을 수 없습니다.")
         return
-    
+
+    st.info(f"📚 원본 데이터: {len(questions)}개의 Q&A 쌍 로드 완료")
+
+    # 질문 증강 수행 (Gemini API 사용)
+    if gemini_client:
+        st.info("🤖 Gemini를 사용하여 질문을 증강하는 중...")
+        augmented_questions = []
+        augmented_answers = []
+
+        # 진행 상황 표시
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        for idx, (question, answer) in enumerate(zip(questions, answers)):
+            # 진행 상황 업데이트
+            progress = (idx + 1) / len(questions)
+            progress_bar.progress(progress)
+            status_text.text(f"처리 중: {idx + 1}/{len(questions)} ({progress*100:.1f}%)")
+
+            # 질문 증강: 원본 질문 + 유사 질문 3개 = 총 4개
+            similar_questions = augment_questions_with_gemini(question, gemini_client)
+
+            # 각 질문을 같은 답변과 매핑
+            for aug_question in similar_questions:
+                augmented_questions.append(aug_question)
+                augmented_answers.append(answer)
+                st.info(f"증강된 질문: {aug_question}  =>  답변: {answer}")
+
+        progress_bar.empty()
+        status_text.empty()
+
+        questions = augmented_questions
+        answers = augmented_answers
+        st.success(f"✅ 질문 증강 완료: {len(questions)}개의 질문으로 확장되었습니다.", icon="🚀")
+    else:
+        st.warning("⚠️ Gemini API를 사용할 수 없어 질문 증강을 건너뜁니다.")
+
     # 컬렉션 생성
     vector_dim = embedding_model.get_sentence_embedding_dimension()
     if qdrant_client.collection_exists(collection_name=COLLECTION_NAME):
@@ -98,14 +216,15 @@ def initialize_db():
     qdrant_client.create_collection(
         collection_name=COLLECTION_NAME,
         vectors_config=models.VectorParams(
-            size=vector_dim, 
+            size=vector_dim,
             distance=models.Distance.COSINE
         ),
     )
     print(f"컬렉션 '{COLLECTION_NAME}' 생성 완료.")
     st.info(f"컬렉션 '{COLLECTION_NAME}'이(가) 생성되었습니다.")
-    
+
     # 데이터 임베딩 및 업로드
+    st.info("🧠 질문을 임베딩하는 중...")
     embeddings = embedding_model.encode(questions).tolist()
     points = [
         models.PointStruct(
