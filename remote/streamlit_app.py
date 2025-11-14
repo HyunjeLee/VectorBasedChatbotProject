@@ -53,7 +53,7 @@ def parse_qa_data(file_path):
 def get_qdrant_client():
     """Qdrant 클라이언트를 로드하고 메모리에 캐싱합니다."""
     try:
-        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=300)
         st.success(" ✅ Qdrant 클라이언트 연결 성공.", icon="🔗")
         return client
     except Exception as e:
@@ -146,14 +146,16 @@ def initialize_db():
 
     st.info(f"📚 원본 데이터: {len(questions)}개의 Q&A 쌍 로드 완료")
 
-    # 질문 번역 수행 (Gemini API 사용)
+    # 질문 + 답변 번역 수행 (Gemini API 사용)
     if gemini_client:
-        st.info("🌐 Gemini를 사용하여 질문을 영어로 번역하는 중...")
+        st.info("🌐 Gemini를 사용하여 질문과 답변을 영어로 번역하는 중...")
         augmented_questions = []
         augmented_answers = []
 
-        translation_success = 0
-        translation_fail = 0
+        question_translation_success = 0
+        question_translation_fail = 0
+        answer_translation_success = 0
+        answer_translation_fail = 0
 
         # 진행 상황 표시
         progress_bar = st.progress(0)
@@ -165,30 +167,42 @@ def initialize_db():
             progress_bar.progress(progress)
             status_text.text(f"번역 중: {idx + 1}/{len(questions)} ({progress*100:.1f}%)")
 
-            # 한글 질문 추가
+            # 1. 한글 질문 추가
             augmented_questions.append(question)
             augmented_answers.append(answer)
 
-            # 영어로 번역
+            # 2. 영어 질문 번역 및 추가
             english_question = translate_to_english(question, gemini_client)
-
             if english_question:
-                # 번역 성공: 영어 질문도 추가
                 augmented_questions.append(english_question)
                 augmented_answers.append(answer)
-                translation_success += 1
+                question_translation_success += 1
             else:
-                # 번역 실패: 한글 질문만 유지
-                translation_fail += 1
+                question_translation_fail += 1
+
+            # 3. 한글 답변 추가 (벡터화를 위해)
+            augmented_questions.append(answer)
+            augmented_answers.append(answer)
+
+            # 4. 영어 답변 번역 및 추가
+            english_answer = translate_to_english(answer, gemini_client)
+            if english_answer:
+                augmented_questions.append(english_answer)
+                augmented_answers.append(answer)
+                answer_translation_success += 1
+            else:
+                answer_translation_fail += 1
 
         progress_bar.empty()
         status_text.empty()
 
         questions = augmented_questions
         answers = augmented_answers
-        st.success(f"✅ 질문 번역 완료: {len(questions)}개의 질문 (번역 성공: {translation_success}, 실패: {translation_fail})", icon="🚀")
+        st.success(f"✅ 번역 완료: 총 {len(questions)}개의 벡터 포인트 생성", icon="🚀")
+        st.info(f"📊 질문 번역 - 성공: {question_translation_success}, 실패: {question_translation_fail}")
+        st.info(f"📊 답변 번역 - 성공: {answer_translation_success}, 실패: {answer_translation_fail}")
     else:
-        st.warning("⚠️ Gemini API를 사용할 수 없어 질문 번역을 건너뜁니다.")
+        st.warning("⚠️ Gemini API를 사용할 수 없어 질문/답변 번역을 건너뜁니다.")
 
     # 컬렉션 생성
     vector_dim = embedding_model.get_sentence_embedding_dimension()
