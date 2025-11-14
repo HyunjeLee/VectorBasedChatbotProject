@@ -301,7 +301,7 @@ def search_qdrant_db(user_query: str):
             best_match = max(matching_results, key=lambda x: x.score)
             if best_match.score >= SIMILARITY_THRESHOLD:
                 final_answer = best_match.payload.get('answer', "답변 내용이 손실되었습니다.")
-                st.info(f"✅ 한글/영어 검색 일치 결과 (유사도: {best_match.score:.4f})")
+                print(f"✅ 한글/영어 검색 일치 결과 (유사도: {best_match.score:.4f})")
                 return final_answer
             else:
                 st.warning(f"일치하는 결과가 있으나 유사도가 낮습니다: {best_match.score:.4f}")
@@ -309,7 +309,7 @@ def search_qdrant_db(user_query: str):
         # 5. 일치하는 답변이 없거나 유사도가 낮으면 한글 검색 결과 1위 사용
         if korean_results and korean_results[0].score >= SIMILARITY_THRESHOLD:
             final_answer = korean_results[0].payload.get('answer', "답변 내용이 손실되었습니다.")
-            st.info(f"📝 한글 검색 결과 (유사도: {korean_results[0].score:.4f})")
+            print(f"📝 한글 검색 결과 (유사도: {korean_results[0].score:.4f})")
             return final_answer
         else:
             # 유사도가 임계값 미만
