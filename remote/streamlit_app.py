@@ -9,7 +9,7 @@ from sentence_transformers import SentenceTransformer
 QDRANT_URL = st.secrets["QDRANT_URL"]
 QDRANT_API_KEY = st.secrets["QDRANT_API_KEY"]
 COLLECTION_NAME = st.secrets["QDRANT_COLLECTION"]
-EMBEDDING_MODEL = "snunlp/KR-SBERT-V40K-klueNLI-augSTS" 
+EMBEDDING_MODEL = "jinaai/jina-embeddings-v3"
 SIMILARITY_THRESHOLD = 0.75  # 유사도 임계값 
 # DATA_FILE_PATH = "data/Q&A.xlsx" # 로컬 파일 경로
 DATA_FILE_PATH = "remote/data/Q&A.xlsx" # 원격 서버 파일 경로
@@ -63,7 +63,7 @@ def get_qdrant_client():
 def get_embedding_model():
     """임베딩 모델을 로드하고 메모리에 캐싱합니다."""
     try:
-        model = SentenceTransformer(EMBEDDING_MODEL)
+        model = SentenceTransformer(EMBEDDING_MODEL, trust_remote_code=True)
         st.success(" ✅ 임베딩 모델 로드 성공.", icon="🧠")
         return model
     except Exception as e:
