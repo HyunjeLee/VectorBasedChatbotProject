@@ -328,7 +328,7 @@ def search_qdrant_db(user_query: str):
 
 # --- 4. Streamlit UI 구성 ---    
 
-st.title("🤖 Qdrant 기반 Q&A 챗봇")
+st.markdown("<h1 style='text-align: center;'>🤖 Qdrant 기반 Q&A 챗봇</h1>", unsafe_allow_html=True)
 
 # Session State 초기화: 채팅 기록을 저장
 if 'messages' not in st.session_state:
