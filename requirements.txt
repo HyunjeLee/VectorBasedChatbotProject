@@ -3,3 +3,4 @@ pandas
 qdrant-client
 sentence-transformers
 openpyxl  # .xlsx 파일을 읽는 데 필요합니다.
+einops
