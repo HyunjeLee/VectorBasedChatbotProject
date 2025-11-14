@@ -11,7 +11,8 @@ QDRANT_API_KEY = st.secrets["QDRANT_API_KEY"]
 COLLECTION_NAME = st.secrets["QDRANT_COLLECTION"]
 EMBEDDING_MODEL = "snunlp/KR-SBERT-V40K-klueNLI-augSTS" 
 SIMILARITY_THRESHOLD = 0.75  # 유사도 임계값 
-DATA_FILE_PATH = "data/Q&A.xlsx"
+# DATA_FILE_PATH = "data/Q&A.xlsx" # 로컬 파일 경로
+DATA_FILE_PATH = "remote/data/Q&A.xlsx" # 원격 서버 파일 경로
 
 print(f"--- 디버깅 정보 ---")
 print(f"로드된 QDRANT_URL: {QDRANT_URL}")
