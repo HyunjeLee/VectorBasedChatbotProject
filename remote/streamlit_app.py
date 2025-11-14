@@ -38,7 +38,7 @@ def parse_qa_data(file_path):
             continue
 
         if text.lower().startswith("q."): # Q 또는 q로 시작하는 경우
-            question = text[2:].strip() # Q. 뒤의 텍스트를 가져온다.
+            question = text[2:].lower().strip() # Q. 뒤의 텍스트를 가져온다. # lower() 전처리 과정 추가
             if question:
                 questions.append(question)
         elif text.lower().startswith("a."): # A 또는 a로 시작하는 경우
@@ -136,6 +136,8 @@ def search_qdrant_db(user_query: str):
         st.error("서버 자원(Qdrant/모델)이 로드되지 않아 검색할 수 없습니다.")
         return "죄송합니다. 서버 초기화에 실패했습니다."
     
+    user_query = user_query.lower().strip() # lower() 전처리 과정 추가 # trim() 전처리 과정 추가
+
     # 1. 질문을 벡터화 (임베딩)
     with st.spinner("질문을 분석하고 지식 기반을 검색 중..."):
         query_vector = embedding_model.encode(user_query).tolist()
