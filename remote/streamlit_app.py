@@ -11,15 +11,10 @@ QDRANT_URL = st.secrets["QDRANT_URL"]
 QDRANT_API_KEY = st.secrets["QDRANT_API_KEY"]
 COLLECTION_NAME = st.secrets["QDRANT_COLLECTION"]
 EMBEDDING_MODEL = "dragonkue/multilingual-e5-small-ko-v2"
+GEMINI_MODEL = "gemini-2.0-flash-lite"
 SIMILARITY_THRESHOLD = 0.75  # 유사도 임계값 
 # DATA_FILE_PATH = "data/Q&A.xlsx" # 로컬 파일 경로
 DATA_FILE_PATH = "remote/data/Q&A.xlsx" # 원격 서버 파일 경로
-
-print(f"--- 디버깅 정보 ---")
-print(f"로드된 QDRANT_URL: {QDRANT_URL}")
-print(f"로드된 QDRANT_API_KEY 길이: {len(QDRANT_API_KEY) if QDRANT_API_KEY else 0}")
-print(f"로드된 COLLECTION_NAME: {COLLECTION_NAME}")
-print("------------------")
 
 
 # --- 2. 리소스 캐싱 (서버 시작 시 한 번만 로드) ---
@@ -108,7 +103,7 @@ def translate_to_english(korean_question: str, gemini_client):
 영어 번역:"""
 
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model=GEMINI_MODEL,
             contents=prompt
         )
 
